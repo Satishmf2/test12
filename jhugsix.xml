@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:json-logger="http://www.mulesoft.org/schema/mule/json-logger" xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd
+http://www.mulesoft.org/schema/mule/json-logger http://www.mulesoft.org/schema/mule/json-logger/current/mule-json-logger.xsd">
+	<flow name="jhugsixFlow" doc:id="3b705cf4-4d00-427e-99f9-529e83715182" >
+		<http:listener doc:name="Listener" doc:id="5f6cb62b-945f-4d75-8885-6221e7dbb9ea" config-ref="sys-edip-flights-datastore-api-httpListenerConfig" path="/transform"/>
+		<ee:transform doc:name="Transform Message" doc:id="d8dd9868-68f9-4f47-9557-e3d9edda5f23" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{latitude: 37.7749, longitude: -122.4194}]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="Transform Message" doc:id="ede95ad1-da98-4bc8-bd20-236247453a41">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+import java!com::example::CoordinateConverter
+---
+{
+    convertedCoordinates: CoordinateConverter::convertCoordinates(payload.latitude, payload.longitude)
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="caa1373e-a6d2-4451-a88b-384171d358ba" message="#[payload]"/>
+		<ee:transform doc:name="Transform Message" doc:id="4312c2aa-6036-4cc3-8b3a-2a810c7aa3ca">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+</mule>

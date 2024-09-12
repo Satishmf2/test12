@@ -1,0 +1,1140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:java="http://www.mulesoft.org/schema/mule/java" xmlns:json-logger="http://www.mulesoft.org/schema/mule/json-logger" xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq" xmlns:mongo="http://www.mulesoft.org/schema/mule/mongo" xmlns:s3="http://www.mulesoft.org/schema/mule/s3" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd 
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/mongo http://www.mulesoft.org/schema/mule/mongo/current/mule-mongo.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+http://www.mulesoft.org/schema/mule/json-logger http://www.mulesoft.org/schema/mule/json-logger/current/mule-json-logger.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+    <http:listener-config name="sys-edip-flights-datastore-api-httpListenerConfig">
+        <http:listener-connection host="0.0.0.0" port="8081" />
+    </http:listener-config>
+	<mongo:config name="MongoDB_Config" doc:name="MongoDB Config" doc:id="22bf5f11-7468-4746-9f9d-e8bd317abef8" >
+		<mongo:connection-string-connection connectionString="mongodb://svc-customerMaster-db-dev:0hCR05225OEH4KRn@customermaster-dev-shard-00-02.tfjdg.mongodb.net:27017,customermaster-dev-shard-00-01.tfjdg.mongodb.net:27017,customermaster-dev-shard-00-00.tfjdg.mongodb.net:27017/customerMaster?ssl=true&amp;readPreference=primary&amp;connectTimeoutMS=10000&amp;authSource=admin&amp;authMechanism=SCRAM-SHA-1"/>
+	</mongo:config>
+	<http:request-config name="HTTP_Customer_Identity_Request_configuration" doc:name="HTTP Request configuration" doc:id="87a069a4-430b-427b-b2c4-7ef3122e962d" >
+		<http:request-connection protocol="HTTPS" />
+	</http:request-config>
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="da33344d-d631-43f9-a4ad-22f95f3eb6b7" basePath="/sys-edip-customer-identity/v1/api" >
+		<http:request-connection protocol="HTTPS" host="dev.itservices.hawaiianairlines.com" >
+			<http:authentication >
+				<http:basic-authentication username="c5c1504623694c6d8baac55f11ad3b9b" password="5118D9E152B24E4f90909Cd1708c45A7" />
+			</http:authentication>
+		</http:request-connection>
+	</http:request-config>
+	<anypoint-mq:config name="Anypoint_MQ_Config" doc:name="Anypoint MQ Config" doc:id="1bf40b2d-d71b-4bb5-b096-8c0051f6dbd3" >
+		<anypoint-mq:connection clientId="ec9c8b216f464d048e8842b8705d4ddd" clientSecret="dAE3FAaDDeF54f6C8c673429b293a5F1" url="https://mq-us-east-1.anypoint.mulesoft.com/api/v1/organizations/7abbfaeb-3816-4907-865e-76d7cb24120f/environments/874c1957-5b22-47ea-956a-70243b6103a8"/>
+	</anypoint-mq:config>
+	<flow name="sys-edip-flights-datastore-api-subscriber" doc:id="eb79e299-41cf-4636-a272-f0cfe9788032" >
+		<anypoint-mq:subscriber doc:name="Subscriber" doc:id="49d2287d-45ad-49f1-9f2e-c8ffbe904c7d" config-ref="Anypoint_MQ_Config" destination="uthra-test-queue"/>
+		<ee:transform doc:name="Transform Message" doc:id="31699fe9-2575-4cc9-ad97-83ba2ec9f2ef" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="cdpGoldenRecord" ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="Transform Message" doc:id="090fab86-0c9e-40c5-be5e-0a497a612399" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+var loyaltyAcctNbr = (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.loyaltyAcctNbr default []) ++ (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.emailAddr default [])
+output application/json
+---
+{
+  "find": "customer_main",
+  "filter":   {
+  	 "customerId" : { '\$in' : loyaltyAcctNbr }, 
+  	 "partyId" : { '\$exists' : true },
+  	 "active" : true
+  }
+} ]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="execute-command" doc:id="f514e6de-58b3-4908-9bbe-8d656f9bdea9" name="execute-command"/>
+		<ee:transform doc:name="Transform Message" doc:id="f8c069f4-2df8-4e28-bcf9-131c2541d15f" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="partyIdDocs" ><![CDATA[%dw 2.0
+output application/json
+---
+payload.cursor.firstBatch]]></ee:set-variable>
+				<ee:set-variable variableName="matchFlg" ><![CDATA[%dw 2.0
+output application/json
+
+var payload1 = vars.cdpGoldenRecord
+
+var payload2 = {
+	"customerId" : flatten(payload.cursor.firstBatch.customerId)
+}
+
+var loyaltyAcctNbr1 = (payload1.customerDataPlatform.goldenRecord.loyaltyAcctNbr default []) ++ (payload1.customerDataPlatform.goldenRecord.emailAddr default [])
+var loyaltyAcctNbr2 = payload2.customerId
+
+// Check if both arrays contain the same elements in the same order
+var isExactMatch = (loyaltyAcctNbr1 == loyaltyAcctNbr2)
+
+// Check for partial match using contains
+var commonElements = loyaltyAcctNbr1 filter (item1) -> loyaltyAcctNbr2 contains item1
+var isPartialMatch = not isEmpty(commonElements)
+
+// Check for no match at all
+var isNoMatchAtAll = isEmpty(commonElements)
+
+// Check if there are more elements in payload1's loyaltyAcctNbr
+var isMoreInPayload1 = (sizeOf(loyaltyAcctNbr1) default 0) > (sizeOf(loyaltyAcctNbr2) default 0)
+
+// Check if there are less elements in payload1's loyaltyAcctNbr
+var isLessInPayload1 = (sizeOf(loyaltyAcctNbr1) default 0) < (sizeOf(loyaltyAcctNbr2) default 0)
+
+---
+{
+  "isExactMatch": isExactMatch,
+  "isPartialMatch": isPartialMatch,
+  "isNoMatchAtAll": isNoMatchAtAll,
+  "isMoreInPayload1": isMoreInPayload1,
+  "isLessInPayload1": isLessInPayload1
+}
+]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="http-requester-customer-identity" doc:id="d98d6ce6-19ad-4666-8fc5-f34d38905ebc" name="http-requester-customer-identity" />
+		<choice doc:name="Choice" doc:id="f7d4f25b-1b71-4fa8-9bc0-201190f9d1b5" >
+			<when expression="#[vars.matchFlg.isNoMatchAtAll == true]">
+				<ee:transform doc:name="noMatchQuery" doc:id="9e9702a0-0330-45d3-bb6a-d53ad9b05528" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+var loyaltyAcctNbr = (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.loyaltyAcctNbr default []) ++ (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.emailAddr default [])
+---
+         {
+                    "update": "customer_main",
+                    "updates":
+                     [
+                       {
+                            "q": { "_id": "\$oid": vars.partyId },
+                            "u": { "\$set": { 
+                                               "_id" : "\$oid": vars.partyId,
+                                               "customerId" : loyaltyAcctNbr,
+                                               "partyId" : "\$oid": vars.partyId,
+                                               "source" : "RedPoint",
+                                               "active": true,
+                                               "version" : "1.0.0",
+                                               "lastModifiedDt" : now() } 
+                              },
+                            "upsert": true,
+                            "multi": false
+                        }
+                    ]
+
+         }]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="execute-command" doc:id="5dabd1a9-5ee6-467c-a6ba-9cb300c3a1ea" name="execute-command"/>
+			</when>
+			<when expression="#[vars.matchFlg.isExactMatch == true]">
+				<ee:transform doc:name="exactMatchQuery" doc:id="51774581-d507-4281-8893-5913c94e606c">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+
+var loyaltyAcctNbr = (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.loyaltyAcctNbr default []) ++ (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.emailAddr default [])
+---
+                {
+                    "update": "customer_main",
+                    "updates": if (sizeOf(vars.partyIdDocs) > 1) 
+                     ([
+                       {
+                            "q": { "_id": '\$in' : vars.partyIdDocs.'_id' },
+                            "u": { "\$set": { 
+                                               "active": false,
+                                               "lastModifiedDt" : now() } 
+                              },
+                            "upsert": false,
+                            "multi": true
+                        },
+                       {
+                            "q": { "_id": "\$oid": vars.partyId },
+                            "u": { "\$set": { 
+                                               "_id" : "\$oid": vars.partyId,
+                                               "customerId" : loyaltyAcctNbr,
+                                               "partyId" : "\$oid": vars.partyId,
+                                               "source" : "RedPoint",
+                                               "active": true,
+                                               "version" : "1.0.0",
+                                               "lastModifiedDt" : now() } 
+                              },
+                            "upsert": true,
+                            "multi": false
+                        }
+                    ]) 
+                    
+                    else 
+                    ([
+                   
+                       {
+                            "q": { "_id": '\$in' : vars.partyIdDocs.'_id'},
+                            "u": { "\$set": { 
+                                               "source" : "RedPoint",
+                                               "active": true,
+                                               "lastModifiedDt" : now()
+                                            } 
+                              },
+                            "upsert": false,
+                            "multi": false
+                        }
+                    ])
+                }]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="execute-command" doc:id="0bc3a28c-33d2-40a6-a5d5-57519f173ac0" name="execute-command"/>
+			</when>
+			<when expression="#[vars.matchFlg.isPartialMatch == true and vars.matchFlg.isMoreInPayload1 == true]">
+				<ee:transform doc:name="partialMatchMoreCDP" doc:id="f1d4f16a-c3ce-4bed-b9e1-da09f531663f">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+
+var loyaltyAcctNbr = (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.loyaltyAcctNbr default []) ++ (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.emailAddr default [])
+---
+                {
+                    "update": "customer_main",
+                    "updates":
+                     [
+                       {
+                            "q": { "_id": '\$in' : vars.partyIdDocs.'_id'},
+                            "u": { "\$set": { 
+                                               "active": false,
+                                               "lastModifiedDt" : now() } 
+                              },
+                            "upsert": false,
+                            "multi": true
+                        },
+                       {
+                            "q": { "_id":  "\$oid": vars.partyId },
+                            "u": { "\$set": { 
+                                               "_id" : "\$oid": vars.partyId,
+                                               "customerId" : loyaltyAcctNbr,
+                                               "partyId" : "\$oid": vars.partyId,
+                                               "source" : "RedPoint",
+                                               "active": true,
+                                               "version" : "1.0.0",
+                                               "lastModifiedDt" : now() } 
+                              },
+                            "upsert": true,
+                            "multi": false
+                        }
+                    ]
+                }]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="execute-command" doc:id="52d3f31e-144e-4cd9-8d98-10d5edeeedb3" name="execute-command"/>
+			</when>
+			<when expression="#[vars.matchFlg.isPartialMatch == true and vars.matchFlg.isLessInPayload1 == true]">
+				<ee:transform doc:name="partialMatchLessCDP" doc:id="007ed185-8b77-447e-b3d4-a0c6e6f942fe" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="orphanId" ><![CDATA[%dw 2.0
+var loyaltyAcctNbr1 = (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.loyaltyAcctNbr default []) ++ (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.emailAddr default [])
+var loyaltyAcctNbr2 = flatten(vars.partyIdDocs.customerId)
+
+var nonMatchingIds = loyaltyAcctNbr2 filter (item2) -> not (loyaltyAcctNbr1 contains item2)
+output application/json
+---
+nonMatchingIds]]></ee:set-variable>
+						<ee:set-variable variableName="updatePayload" ><![CDATA[%dw 2.0
+var loyaltyAcctNbr = (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.loyaltyAcctNbr default []) ++ (vars.cdpGoldenRecord.customerDataPlatform.goldenRecord.emailAddr default [])
+output application/json
+---
+{
+                    "update": p('customer.master.atlas.customerMasterCollection'),
+                    "updates": 
+                     [
+                       {
+                            "q": { "_id": '\$in' : vars.partyIdDocs.'_id' },
+                            "u": { "\$set": { 
+                                               "active": false,
+                                               "lastModifiedDt" : now() } 
+                              },
+                            "upsert": false,
+                            "multi": true
+                    },
+                     {
+                            "q": { "partyId": "\$oid":  vars.partyId },
+                            "u": { "\$set": { 
+                                               "customerId" : loyaltyAcctNbr,
+                                               "partyId" : "\$oid": vars.partyId,
+                                               "source" : "RedPoint",
+                                               "active": true,
+                                               "version" : "1.0.0",
+                                               "lastModifiedDt" : now() } 
+                              },
+                            "upsert": true,
+                            "multi": false
+                        }
+                     ]
+                    
+                    }]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<ee:transform doc:name="varInitialization" doc:id="e340ed62-ab68-4372-b089-59a582684bd5">
+								<ee:message>
+								</ee:message>
+								<ee:variables>
+									<ee:set-variable variableName="partyIds"><![CDATA[%dw 2.0
+output application/json
+---
+[]]]></ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+				<foreach doc:name="For Each" doc:id="6f1d6016-408a-46b2-b18b-516b53d91923" collection="#[vars.orphanId]">
+							<flow-ref doc:name="http-requester-customer-identity" doc:id="f422b971-69c4-4b96-8b29-e46bdf9841f8" name="http-requester-customer-identity" />
+							<ee:transform doc:name="set-partyIds" doc:id="7b2752a8-26a9-4e69-aee0-811cbfe44fd8">
+								<ee:message>
+								</ee:message>
+								<ee:variables>
+									<ee:set-variable variableName="partyIds"><![CDATA[%dw 2.0
+output application/json
+---
+vars.partyIds << vars.partyId]]></ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+						</foreach>
+				<ee:transform doc:name="create-doc-for-orphanId" doc:id="50cdbcfb-4fd3-41b8-bcc7-1817fe414bae" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+var partyVal = (vars.partyIds) zip (vars.orphanId) map ((pair) -> {
+	          "partyId" : pair[0],
+	          "loyaltyAcctNbr" : pair[1]
+})
+output application/json
+---
+{
+                    "update": "customer_main",
+                    "updates": 
+                    
+                    (vars.updatePayload.updates) ++ 
+                     ( partyVal map (value, IndexOfValue) ->
+                       {
+                            "q": { "customerId": [value.loyaltyAcctNbr] ,
+                            	   "active" : false
+                            },
+                            "u": { 
+                            	 "\$setOnInsert": { 
+                                               "partyId" : "\$oid":  value.partyId
+                                               
+                                           } ,
+                                "\$set": { 
+                                               "customerId" : [value.loyaltyAcctNbr],
+                                               "source" : "RedPoint",
+                                               "active": true,
+                                               "version" : "1.0.0",
+                                               "lastModifiedDt" : now()
+                                           } 
+                              },
+                            "upsert": true,
+                            "multi": false
+                        })
+                    
+                   }]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="execute-command" doc:id="341ab21a-8788-47a1-9828-4ae3b6eee2ae" name="execute-command"/>
+			</when>
+		</choice>
+		<logger level="INFO" doc:name="Logger" doc:id="53e93564-17b0-4a11-9e48-7d9ea8225833" message="#[payload]"/>
+	</flow>
+	<flow name="sys-edip-flights-datastore-apiFlow" doc:id="4a40f466-6c86-4136-96b9-b59082ee07c1" >
+		<scheduler doc:name="Scheduler" doc:id="3e56400e-e276-4b49-9cf4-6258ba2d982a" >
+			<scheduling-strategy >
+				<fixed-frequency startDelay="1332323230" timeUnit="HOURS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<ee:transform doc:name="Transform Message" doc:id="5ffa8890-bec8-4c8b-bda6-5bca7c135507" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+         {
+                    "update": "customer_main",
+                    "updates":
+                     [
+                       {
+                            "q": { customerId :  721123744 ,
+                            	"active" :  true
+                            },
+                            "u": { "\$setOnInsert": { 
+                                               "_id" : "\$oid": "66a01168012769f10000006e",
+                                               "customerId" : 721123744,
+                                               "partyId" : "\$oid": "66a01168012769f10000006e",
+                                               "source" : "CustomerMaster",
+                                               "active": true,
+                                               "version" : "1.0.0",
+                                               "lastModifiedDt" : now() } 
+                              },
+                            "upsert": true,
+                            "multi": false
+                        }
+                    ]
+
+         }]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="execute-command" doc:id="6398f95a-234e-4e60-bc30-6d14b833252f" name="execute-command"/>
+		<logger level="INFO" doc:name="Logger" doc:id="fe61235b-27d8-4e5b-8981-2b8c90377c70" message="payload"/>
+	</flow>
+	<sub-flow name="http-requester-customer-identity" doc:id="8473dade-13d2-421b-aaf3-8743b14c9adf" >
+		<http:request method="GET" doc:name="Request" doc:id="cd2a6862-da4d-4fd3-a0f5-09558a6ef323" config-ref="HTTP_Request_configuration" path="/customer" sendCorrelationId="AUTO" target="partyId" targetValue="#[payload.partyId]">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"x-correlation-id" : correlationId,
+    "x-ha-channel" : "WEB",
+    "x-ha-business-domain" : "BIDS"
+}]]]></http:headers>
+		</http:request>
+	</sub-flow>
+	<flow name="sys-edip-flights-datastore-apiFlow1" doc:id="f93232f1-a548-4438-8714-0e13ede0a0f4" >
+		<http:listener doc:name="Listener" doc:id="df640dde-f0f9-4d95-a710-604dd2730dc9" config-ref="sys-edip-flights-datastore-api-httpListenerConfig" path="/test"/>
+		<ee:transform doc:name="Transform Message" doc:id="2abd05b7-a0d6-4c89-a113-0ab7b3625c00" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+
+  "Envelope": {
+
+    "Body": {
+
+      "Message": {
+
+        "Header": {
+
+          "SOI_Info": {
+
+            "SOI_MsgID": "ID-tsitappdbolc006-comp-pge-com-31619-1703104035020-1-69334",
+
+            "SOI_ComponentID": "ServiceSuite"
+
+          },
+
+          "MsgID": "a4fbd392-9157-4607-838f-e27fe66fbbad",
+
+          "MsgType": "event",
+
+          "MsgPriority": "normal",
+
+          "MsgTimestamp": "2024-03-06T07:12:38Z",
+
+          "MsgExpiry": "168.0",
+
+          "MsgVersion": "1.3.1",
+
+          "ServiceName": "UserRequest",
+
+          "OriginationApp": null,
+
+          "DestinationApp": null
+
+        },
+
+        "Payload": {
+
+          "UserRequest": {
+
+            "Action": "Created",
+
+            "RecordConfig": "ServiceSuite9.8.1",
+
+            "RequestType": null,
+
+            "FromUserId": "E1TAAK5",
+
+            "SubmittedAt": "2024-03-06T07:12:36Z",
+
+            "IsHighPriority": "false",
+
+            "Form": {
+
+              "GenericFormData": {
+
+                "SAP1LogEcDamagedEquipHstReq": {
+
+                  "PGEOutOisNum": "17919",
+
+                  "PGEOutDevNum": "R9755",
+
+                  "PGEEcOnStandby": "false",
+
+                  "PGEEcFormType": "OH",
+
+                  "PGEEcPriority": "A",
+
+                  "PGEEcEmergencyCauseType": "TRCT",
+
+                  "PGEEcEmergencyTempRepFlag": "N",
+
+                  "PGEEcDevLoc": "RACHAEL & MONTALVIN DR.",
+
+                  "PGEOutMatlNeededLoc": "Test work location",
+
+                  "PGEEcMainWkCtr": "ANTIOCH",
+
+                  "PGEAddrNum": "419",
+
+                  "PGEAddrName": "MONTALVIN DR",
+
+                  "PGECity": "ANTIOCH",
+
+                  "PGEEcPositionLatitude": "37.39622",
+
+                  "PGEEcPositionLongitude": "-122.01016",
+
+                  "PGEDispOec": "true",
+
+                  "PGEAFDOhConductorQuestionsRequiredFlag": "false",
+
+                  "PGEAFDConnectorQuestionsRequiredFlag": "false",
+
+                  "PGEAFDConnectorSpliceFlag": "false",
+
+                  "PGEAFDInsulatorQuestionsRequiredFlag": "false",
+
+                  "PGEAFDUndergroundQuestionsRequiredFlag": "false",
+
+                  "PGEAFDPoleQuestionsRequiredFlag": "false",
+
+                  "PGEAFDCrossarmQuestionsRequiredFlag": "false",
+
+                  "PGEAFDTransfQuestionsRequiredFlag": "false",
+
+                  "PGEAFDFuseQuestionsRequiredFlag": "false",
+
+                  "PGEAFDCapacitorQuestionsRequiredFlag": "false",
+
+                  "PGEAFDRecloserQuestionsRequiredFlag": "false",
+
+                  "PGEFieldWorkerFlag": "false",
+
+                  "PGEEcData": {
+
+                    "PGEEcCompleted": "false",
+
+                    "ReferenceInfo": {
+
+                      "PGECircuit": "014261101",
+
+                      "PGEEcSsd": "R9755",
+
+                      "PGEEleKwhMtrNum": "1006032299",
+
+                      "PGESapPoleId": "123456789",
+
+                      "PGESapNoPoleId": "false"
+
+                    },
+
+                    "SecondaryFieldIdentifiers": {
+
+                      "PGEEcFldIdJointPole": "false",
+
+                      "PGEEcFldIdCust": "false",
+
+                      "PGEEcFldIdUwf": "false",
+
+                      "PGEEcFldIdSubstation": "false",
+
+                      "PGEEcFldIdWkVerif": "false",
+
+                      "PGEEcFldIdSmartMtr": "false",
+
+                      "PGEEcFldIdPgeAudit": "false",
+
+                      "PGEEcFldIdCpucAudit": "false"
+
+                    },
+
+                    "FieldConditionAccessibility": {
+
+                      "PGEEcFldAccessNoRoad": "false",
+
+                      "PGEEcFldAccessNoRoadStr": "Is Accessible",
+
+                      "PGEEcFldAccessTrafficCntrl": "false",
+
+                      "PGEEcFldAccessCustIssue": "false",
+
+                      "PGEEcFldAccessCgi": "false",
+
+                      "PGEEcFldAccessRearEasement": "false",
+
+                      "PGEEcFldAccessBtaLta": "false",
+
+                      "PGEEcFldAccessBtaLtaStr": "N",
+
+                      "PGEEcFldAccessFlaggingReq": "false",
+
+                      "PGEEcFldAccessUsaReq": "false"
+
+                    },
+
+                    "FieldConditionExposure": {
+
+                      "PGEEcFldCndExpHighPublic": "false",
+
+                      "PGEEcFldCndExpResArea": "false",
+
+                      "PGEEcFldCndExpCommrcl": "false",
+
+                      "PGEEcFldCndExpRemoteArea": "false",
+
+                      "PGEEcFldCndExpHighFireRisk": "false",
+
+                      "PGEEcFldCndExpWaterway": "false"
+
+                    },
+
+                    "ConductorType": {
+
+                      "PGEEcCndrTypePrim": "false",
+
+                      "PGEEcCndrTypeSecond": "false",
+
+                      "PGEEcCndrTypeService": "false",
+
+                      "PGEEcCndrTypeStLight": "false",
+
+                      "PGEEcCndrTypeNtwkPrim": "false",
+
+                      "PGEEcCndrTypeNtwkTransf": "false",
+
+                      "PGEEcCndrTypeNtwkProtector": "false",
+
+                      "PGEEcCndrTypeNtwkVault": "false",
+
+                      "PGEEcCndrTypeNtwkSecond": "false"
+
+                    }
+
+                  },
+
+                  "DamagedEquip": {
+
+                    "PGEOutOilSpill": "D",
+
+                    "PGEOutJointPole": "C",
+
+                    "PGEOutTreeCrew": "2",
+
+                    "PGEOutOther": "Y",
+
+                    "PGEOutIsHaz": "Y",
+
+                    "PGEOutSafetyRemk": "test Safety remars",
+
+                    "PGEOutSpSetupRemk": "Test Special Setup",
+
+                    "PGEOutPersonnelRemk": "Test Personnel",
+
+                    "PGEOutMatlRemk": "Test Material",
+
+                    "PGEEcFldRemk": "Test Field Comments",
+
+                    "MaterialFDAPrimary": {
+
+                      "PGEPrimaryOutMatCategory": "9005",
+
+                      "PGEPrimaryOutMatNeeded": "0101",
+
+                      "PGEPrimaryOutMatDamage": "1166",
+
+                      "PGEPrimaryOutMatNeededQty": "2",
+
+                      "PGEPrimaryEcFda": "COND:BROK:REPL:CAP",
+
+                      "PGEPrimaryOutCategoryAux1": "ConductorOh"
+
+                    },
+
+                    "MaterialFDAAdditional": {
+
+                      "PGEOutMatCategory": "9009",
+
+                      "PGEOutMatNeeded": "0261",
+
+                      "PGEOutMatDamage": "2526",
+
+                      "PGEOutMatNeededQty": "3",
+
+                      "PGEEcFda": "CRSS:BROK:REPL:CAP",
+
+                      "PGEMatDesc": "CROSSARM:5'4\" WOOD PIN",
+
+                      "PGEOutCategoryAux1": "Crossarm",
+
+                      "PGEOutCategoryOHConductorCount": "0",
+
+                      "PGEOutCategoryConnectorCount": "0",
+
+                      "PGEOutCategoryInsulatorCount": "0",
+
+                      "PGEOutCategoryUndergroundCount": "0",
+
+                      "PGEOutCategoryPoleCount": "0",
+
+                      "PGEOutCategoryCrossarmCount": "1",
+
+                      "PGEOutCategoryTransformerCount": "0",
+
+                      "PGEOutCategoryFuseCount": "0",
+
+                      "PGEOutCategoryCapacitorCount": "0",
+
+                      "PGEOutCategoryRecloserCount": "0"
+
+                    }
+
+                  },
+
+                  "AssetFailure": {
+
+                    "AssetTypes": {
+
+                      "PGEOHConductorFlag": "false",
+
+                      "PGEConnectorFlag": "false",
+
+                      "PGEInsulatorFlag": "false",
+
+                      "PGEUndergroundFlag": "false",
+
+                      "PGEPoleFlag": "false",
+
+                      "PGECrossArmFlag": "false",
+
+                      "PGETransformerFlag": "false",
+
+                      "PGEFuseFlag": "false",
+
+                      "PGECapacitorFlag": "false",
+
+                      "PGERecloserFlag": "false"
+
+                    },
+
+                    "OHConductor": {
+
+                      "PGEOHConductorHasDataFlag": "false",
+
+                      "PGEPrimaryInd": "false",
+
+                      "PGESecondaryInd": "false",
+
+                      "FailureContributor": {
+
+                        "PGEFailureContributorHasDataFlag": "false"
+
+                      }
+
+                    },
+
+                    "ConnectorJumperKearney": {
+
+                      "PGEConnectorHasDataFlag": "false",
+
+                      "FailureContributor": {
+
+                        "PGEFailureContributorHasDataFlag": "false"
+
+                      }
+
+                    },
+
+                    "Insulator": {
+
+                      "PGEInsulatorHasDataFlag": "false",
+
+                      "InsulatorContamination": {
+
+                        "PGEContaminationHasDataFlag": "false"
+
+                      },
+
+                      "VisualIndicator": {
+
+                        "PGEVisualIndicatorHasDataFlag": "false"
+
+                      }
+
+                    },
+
+                    "Underground": {
+
+                      "PGEUndergroundHasDataFlag": "false"
+
+                    },
+
+                    "Pole": {
+
+                      "PGEPoleHasDataFlag": "false",
+
+                      "FailureContributor": {
+
+                        "PGEFailureContributorHasDataFlag": "false"
+
+                      }
+
+                    },
+
+                    "Crossarm": {
+
+                      "PGECrossarmHasDataFlag": "false",
+
+                      "FailureContributor": {
+
+                        "PGEFailureContributorHasDataFlag": "false"
+
+                      }
+
+                    },
+
+                    "Transformer": {
+
+                      "PGETransformerHasDataFlag": "false",
+
+                      "FailureContributor": {
+
+                        "PGEFailureContributorHasDataFlag": "false"
+
+                      }
+
+                    },
+
+                    "Fuse": {
+
+                      "FailureContributor": {
+
+                        "PGEFailureContributorHasDataFlag": "false"
+
+                      }
+
+                    },
+
+                    "Capacitor": {
+
+                      "PGECapacitorHasDataFlag": "false",
+
+                      "FailureContributor": {
+
+                        "PGEFailureContributorHasDataFlag": "false"
+
+                      },
+
+                      "VisualIndicators": {
+
+                        "PGEVisualIndicatorHasDataFlag": "false"
+
+                      }
+
+                    },
+
+                    "Recloser": {
+
+                      "PGERecloserHasDataFlag": "false",
+
+                      "FailureContributor": {
+
+                        "PGEFailureContributorHasDataFlag": "false"
+
+                      },
+
+                      "VisualIndicators": {
+
+                        "PGEVisualIndicatorHasDataFlag": "false"
+
+                      }
+
+                    }
+
+                  },
+
+                  "ThirdParty": {
+
+                    "PGEThrdInd": "false",
+
+                    "PGEThrdUnkInd": "false",
+
+                    "IncidentReport": {
+
+                      "PGEPriorThirdPartySubmission": "Y",
+
+                      "PGEIncidentType": "020 - Vehicle Pole/Guy Incident",
+
+                      "PGEOisNum": "17919",
+
+                      "PGEIncidentLocation": "test incident location",
+
+                      "PGEIncidentCity": "Concord",
+
+                      "PGENumberOfAttachments": "0",
+
+                      "RespondingFireSuppressionUnit": {
+
+                        "PGERespondingFireSuppressionUnitVal": "false",
+
+                        "PGEUsfs": "false",
+
+                        "PGECdf": "false",
+
+                        "PGECity": "false",
+
+                        "PGECounty": "false",
+
+                        "PGEOther": "false",
+
+                        "PGENone": "false"
+
+                      },
+
+                      "LawEnforcementPresent": {
+
+                        "PGELawEnforcementPresentVal": "false",
+
+                        "PGEHwyPatrol": "false",
+
+                        "PGECityPolice": "false",
+
+                        "PGECounty": "false",
+
+                        "PGENone": "false"
+
+                      },
+
+                      "ThirdPartyContactInfo": null
+
+                    },
+
+                    "VehiclePoleAccident": {
+
+                      "WeatherCondition": {
+
+                        "PGEWeatherConditionVal": "false",
+
+                        "PGEClear": "false",
+
+                        "PGEOvercast": "false",
+
+                        "PGERainy": "false",
+
+                        "PGEMisty": "false",
+
+                        "PGEStormy": "false",
+
+                        "PGECloudy": "false",
+
+                        "PGEWindy": "false",
+
+                        "PGEDamp": "false",
+
+                        "PGEIcy": "false",
+
+                        "PGEDrizzly": "false",
+
+                        "PGELightning": "false",
+
+                        "PGEDry": "false",
+
+                        "PGESnowy": "false",
+
+                        "PGESunny": "false",
+
+                        "PGELightFog": "false",
+
+                        "PGEHeavyFog": "false",
+
+                        "PGEOther": "false"
+
+                      },
+
+                      "Circuit": {
+
+                        "PGECircuitVal": "false",
+
+                        "PGETransmission": "false",
+
+                        "PGEDistribution": "false",
+
+                        "PGESecondary": "false",
+
+                        "PGEService": "false"
+
+                      }
+
+                    },
+
+                    "OHLineContact": null,
+
+                    "DamageToPgeUGFacilities": null,
+
+                    "FireDamage": {
+
+                      "WeatherCondition": {
+
+                        "PGEWeatherConditionVal": "false",
+
+                        "PGEClear": "false",
+
+                        "PGEOvercast": "false",
+
+                        "PGERainy": "false",
+
+                        "PGEMisty": "false",
+
+                        "PGEStormy": "false",
+
+                        "PGECloudy": "false",
+
+                        "PGEWindy": "false",
+
+                        "PGEDamp": "false",
+
+                        "PGEIcy": "false",
+
+                        "PGEDrizzly": "false",
+
+                        "PGELightning": "false",
+
+                        "PGEDry": "false",
+
+                        "PGESnowy": "false",
+
+                        "PGESunny": "false",
+
+                        "PGELightFog": "false",
+
+                        "PGEHeavyFog": "false",
+
+                        "PGEOther": "false"
+
+                      },
+
+                      "DamageInjury": {
+
+                        "PGEDamageInjuryVal": "false",
+
+                        "PGECompanyProperty": "false",
+
+                        "PGEThirdPartyProperty": "false",
+
+                        "PGEPeople": "false"
+
+                      }
+
+                    }
+
+                  }
+
+                }
+
+              }
+
+            },
+
+            "AssociatedTask": {
+
+              "TaskNumber": "144398643032490000"
+
+            }
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<ee:transform doc:name="Transform Message" doc:id="a70a0ff1-b082-4839-974a-a473a0df6c22" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+
+output application/json
+var earth_radius =6371000
+
+import java!org::locationtech::proj4j::CoordinateTransformFactory
+var deg_to_rad= 3.141592653589793/180
+
+var payload1= payload.Envelope.Body.Message.Payload
+
+
+---
+
+{
+
+"PositionPoint": CoordinateTransformFactory::new()
+
+}]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="latLong" ><![CDATA[%dw 2.0
+output application/json
+import java!org::locationtech::proj4j::CoordinateTransformFactory
+import java!org::locationtech::proj4j::CoordinateReferenceSystem
+
+var transformFactory = CoordinateTransformFactory::new()
+
+var transformation = transformFactory.createTransform(payload.UserRequest.Form.GenericFormData.SAP1LogEcDamagedEquipHstReq.PGEEcPositionLatitude,payload.UserRequest.Form.GenericFormData.SAP1LogEcDamagedEquipHstReq.PGEEcPositionLongitude)
+
+---
+{
+  "PositionPoint": transformation
+}
+]]></ee:set-variable>
+				<ee:set-variable variableName="test" ><![CDATA[%dw 2.0
+output application/json
+import java!org::locationtech::proj4j::CoordinateTransformFactory
+import java!org::locationtech::proj4j::CoordinateReferenceSystem
+import java!org::locationtech::proj4j::datum::Datum
+import java!org::locationtech::proj4j::datum::Ellipsoid
+import java!org::locationtech::proj4j::proj::LongLatProjection
+
+// Define an Ellipsoid (e.g., WGS84)
+var ellipsoid = Ellipsoid::new("WGS84", 6378137.0, 0.006694379990141317, 6356752.314245, true)
+
+// Define the Datum with the required number arguments
+// Using [] for transform and anchor points as they are arrays of numbers
+var datum = Datum::new("WGS84", ellipsoid, [], [], 0.0, [])
+
+// Define the Projection (e.g., LongLatProjection)
+var projection = LongLatProjection::new()
+
+// Initialize source and target CoordinateReferenceSystems
+var sourceCRS = CoordinateReferenceSystem::new("EPSG:4326", null, datum, projection)
+var targetCRS = CoordinateReferenceSystem::new("EPSG:3857", null, datum, projection)
+
+// Create a transformation factory and use it to create a transform
+var transformFactory = CoordinateTransformFactory::new()
+var transformation = transformFactory.createTransform(sourceCRS, targetCRS)
+
+---
+{
+  "PositionPoint": transformation
+}
+]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="2b4d1ce9-3d63-4fee-b314-ca321c3d6173" message="#[payload]"/>
+	</flow>
+	<sub-flow name="execute-command" doc:id="afab893c-598b-4605-a0b2-d25fa288507c" >
+		<mongo:execute-command doc:name="Execute command" doc:id="b70bc222-c072-46a0-b303-2ddaf87c04b8" config-ref="MongoDB_Config" targetValue="#[payload.cursor.firstBatch]" />
+	</sub-flow>
+</mule>
